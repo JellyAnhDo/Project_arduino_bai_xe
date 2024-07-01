@@ -50,6 +50,12 @@ char sv;
 int lightSensor, fireSensor = HIGH;
 int s1, s2, s3, s4;
 
+//======================== Millis
+long last = 0;
+// long scanCard = 0;
+// long buzzer = 0;
+long barrier = 0;
+
 int a = 0, b = 0, c = 0, d = 0;
 int count = 0;
 
@@ -196,9 +202,11 @@ void setup()
   lcd.backlight();
   lcd.clear();
 
-  vTaskDelay(250 / portTICK_PERIOD_MS);
+  barrier = millis();
+
+  // vTaskDelay(250 / portTICK_PERIOD_MS);
   LCD();
-  vTaskDelay(250 / portTICK_PERIOD_MS);
+  // vTaskDelay(250 / portTICK_PERIOD_MS);
 
   // Tạo mutex
   xMutex = xSemaphoreCreateMutex();
@@ -209,11 +217,12 @@ void setup()
       ; // Dừng chương trình nếu không tạo được mutex
   }
 
+
   // Tạo 2 Task:
   xTaskCreatePinnedToCore(
       TaskSensor,   // Hàm xử lý của Task
       "TaskSensor", // Tên Task
-      10000,         // Kích thước stack cho Task
+      128,         // Kích thước stack cho Task
       NULL,         // Tham số truyền vào Task
       1,            // Độ ưu tiên của Task (0 là thấp nhất, 3 là cao nhất)
       &xTaskSensor, // Biến lưu trữ Task handle
@@ -223,7 +232,7 @@ void setup()
   xTaskCreatePinnedToCore(
       TaskManualBarrierControl,   // Hàm xử lý của Task
       "TaskManualBarrierControl", // Tên Task
-      1024,                       // Kích thước stack cho Task
+      1000,                       // Kích thước stack cho Task
       NULL,                       // Tham số truyền vào Task
       1,                          // Độ ưu tiên của Task (0 là thấp nhất, 3 là cao nhất)
       &xTaskManualBarrierControl, // Biến lưu trữ Task handle
@@ -239,6 +248,7 @@ void setup()
   //     &xTaskAutoBarrierControl, // Biến lưu trữ Task handle
   //     0                         // Lõi CPU để chạy Task (0 hoặc 1)
   // );
+
   Serial.println("Start program.................");
 
 }

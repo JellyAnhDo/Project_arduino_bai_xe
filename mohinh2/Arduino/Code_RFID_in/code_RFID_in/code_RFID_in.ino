@@ -96,9 +96,9 @@ void setup() {
 
   //==================== Các task ================================
   xTaskCreate(TaskReadSensor, "TaskReadSensor", 128, NULL, 1, &xTaskReadSensor);                                //50ms
-  xTaskCreate(TaskReadRFID, "TaskReadRFID", 128, NULL, 1, &xTaskReadRFID);                                      // 1282ms
+  // xTaskCreate(TaskReadRFID, "TaskReadRFID", 128, NULL, 1, &xTaskReadRFID);                                      // 1282ms
   xTaskCreate(TaskManualControlBarrier, "TaskManualControlBarrier", 128, NULL, 1, &xTaskManualControlBarrier);  //Ko hoạt động 1ms, hđ: 5970ms
-  xTaskCreate(TaskAutoControlBarrier, "TaskAutoControlBarrier", 128, NULL, 1, &xTaskAutoControlBarrier);
+  // xTaskCreate(TaskAutoControlBarrier, "TaskAutoControlBarrier", 128, NULL, 1, &xTaskAutoControlBarrier);
   // xTaskCreate(TaskReadESP, "TaskReadESP", 128, NULL, 1, &xTaskReadESP);
 
   Serial.println("Start program....");

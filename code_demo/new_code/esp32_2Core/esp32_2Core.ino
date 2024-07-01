@@ -2,8 +2,8 @@
 #include "lib_and_pin.h"
 
 // Internet & database config
-#define WIFI_SSID "HoangAnhHN"
-#define WIFI_PASSWORD "Hoanganh2002"
+#define WIFI_SSID "VyGarden Coffee"
+#define WIFI_PASSWORD "88888888"
 #define FIREBASE_AUTH "vjLt9l2OmXNWUaXyieAUfC4hV49gR6iRAH16s4Nl"
 #define FIREBASE_HOST "carparking-4ce1e-default-rtdb.firebaseio.com"
 
@@ -44,7 +44,7 @@ void setup() {
   xTaskCreatePinnedToCore(
     TaskManualBarrierControl,    // Hàm xử lý của Task
     "TaskManualBarrierControl",  // Tên Task
-    1024,                        // Kích thước stack cho Task
+    2048,                        // Kích thước stack cho Task
     NULL,                        // Tham số truyền vào Task
     1,                           // Độ ưu tiên của Task (0 là thấp nhất, 3 là cao nhất)
     &xTaskManualBarrierControl,  // Biến lưu trữ Task handle
@@ -154,6 +154,12 @@ void display(byte mode) {
       lcd.setCursor(0, 1);
       lcd.print("Canh Bao Co Chay");
       break;
+    case 5:  // Warning by sensor
+      lcd.setCursor(0, 0);
+      lcd.print("     Sorry!     ");
+      lcd.setCursor(0, 1);
+      lcd.print(" No space left! ");
+      break;
     default:
       break;
   }
@@ -163,26 +169,24 @@ byte push_data_to_firebase() {
   byte b = (digitalRead(slot2) == LOW) ? 1 : 0;
   byte c = (digitalRead(slot3) == LOW) ? 1 : 0;
   byte d = (digitalRead(slot4) == LOW) ? 1 : 0;
+  byte fireSensor = digitalRead(fireSensor_PIN);
 
   byte count = a + b + c + d;
 
-  if (xSemaphoreTake(xMutex, (TickType_t)10) == pdTRUE) {
-    Firebase.setInt(firebaseData, "/FireSensor", fireSensor);
-    Firebase.setInt(firebaseData, "/ParkingSpace/ParkingSpaceCount", count);
-    Firebase.setInt(firebaseData, "/ParkingSpace/Space1", a);
-    Firebase.setInt(firebaseData, "/ParkingSpace/Space2", b);
-    Firebase.setInt(firebaseData, "/ParkingSpace/Space3", c);
-    Firebase.setInt(firebaseData, "/ParkingSpace/Space4", d);
-    xSemaphoreGive(xMutex);
-  }
+  Firebase.setInt(firebaseData, "/FireSensor", fireSensor);
+  Firebase.setInt(firebaseData, "/ParkingSpace/Space1", a);
+  Firebase.setInt(firebaseData, "/ParkingSpace/Space2", b);
+  Firebase.setInt(firebaseData, "/ParkingSpace/Space3", c);
+  Firebase.setInt(firebaseData, "/ParkingSpace/Space4", d);
 
   return count;
 }
 
 void TaskSensor(void *pv) {
   while (1) {
+    Serial.println("Task sensor...................");
     // Check fire sensor
-    if (fireSensor == LOW) {
+    if (digitalRead(fireSensor_PIN) == LOW) {
       display(4);
       servo_in.write(85);
       servo_out.write(0);
@@ -191,18 +195,15 @@ void TaskSensor(void *pv) {
       servo_in.write(172);
       servo_out.write(82);
       digitalWrite(buzzer_PIN, HIGH);
-      if (parking_space_check() == 4) {
-        lcd.setCursor(0, 0);
-        lcd.print("     Sorry!     ");
-        lcd.setCursor(0, 1);
-        lcd.print(" No space left! ");
+      if (push_data_to_firebase() == 4) {
+        display(5);
       } else {
-        LCD();
+        display(1);
       }
     }
 
     // Điều khiển đèn
-    lightSensor = digitalRead(lightSensor_PIN);
+    byte lightSensor = digitalRead(lightSensor_PIN);
     Firebase.getInt(firebaseData, "/Light/LightBtn");
     int lightBtn = firebaseData.intData();
 
@@ -224,6 +225,7 @@ void TaskSensor(void *pv) {
 }
 void TaskManualBarrierControl(void *pv) {
   while (1) {
+    Serial.println("Task barie.....................");
     /* Điều khiển đóng mở barie bằng nút bấm */
     if (digitalRead(btnRa_PIN) == 0) gate_in();
     if (digitalRead(btnVao_PIN) == 0) gate_out();
@@ -232,7 +234,7 @@ void TaskManualBarrierControl(void *pv) {
       char key = Serial.read();
 
       if (key == '1') gate_in();
-      else (key == '2') gate_out();
+      if (key == '2') gate_out();
     }
 
     vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 10ms
