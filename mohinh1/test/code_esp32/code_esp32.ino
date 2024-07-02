@@ -185,21 +185,21 @@ void TaskSensor(void *pv) {
   while (1) {
     Serial.println("Task sensor...................");
     // Check fire sensor
-    if (digitalRead(fireSensor_PIN) == LOW) {
-      display(4);
-      servo_in.write(85);
-      servo_out.write(0);
-      digitalWrite(buzzer_PIN, LOW);
-    } else {
-      servo_in.write(172);
-      servo_out.write(82);
-      digitalWrite(buzzer_PIN, HIGH);
-      if (push_data_to_firebase() == 4) {
-        display(5);
-      } else {
-        display(1);
-      }
-    }
+    // if (digitalRead(fireSensor_PIN) == LOW) {
+    //   display(4);
+    //   servo_in.write(85);
+    //   servo_out.write(0);
+    //   digitalWrite(buzzer_PIN, LOW);
+    // } else {
+    //   servo_in.write(172);
+    //   servo_out.write(82);
+    //   digitalWrite(buzzer_PIN, HIGH);
+    //   if (push_data_to_firebase() == 4) {
+    //     display(5);
+    //   } else {
+    //     display(1);
+    //   }
+    // }
 
     push_data_to_firebase();
 
