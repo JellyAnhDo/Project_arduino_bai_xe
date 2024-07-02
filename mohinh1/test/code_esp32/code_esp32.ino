@@ -66,7 +66,7 @@ void gate_in() {
 
   vTaskDelay(5000 / portTICK_PERIOD_MS);
   servo_in.write(172);
-  servo_in.detach();
+  Serial.println("aaaaa");
 }
 void gate_out() {
   servo_out.attach(servoRa_PIN);
@@ -81,7 +81,6 @@ void gate_out() {
 
   vTaskDelay(5000 / portTICK_PERIOD_MS);
   servo_out.write(82);
-  servo_out.detach();
 }
 void init_system() {
   // Pin mode
@@ -191,8 +190,8 @@ void TaskSensor(void *pv) {
     //   servo_out.write(0);
     //   digitalWrite(buzzer_PIN, LOW);
     // } else {
-    //   servo_in.write(172);
-    //   servo_out.write(82);
+    //   // servo_in.write(172);
+    //   // servo_out.write(82);
     //   digitalWrite(buzzer_PIN, HIGH);
     //   if (push_data_to_firebase() == 4) {
     //     display(5);
@@ -202,7 +201,6 @@ void TaskSensor(void *pv) {
     // }
 
     push_data_to_firebase();
-
     // Điều khiển đèn
     byte lightSensor = digitalRead(lightSensor_PIN);
     Firebase.getInt(firebaseData, "/Light/LightBtn");
@@ -222,23 +220,33 @@ void TaskSensor(void *pv) {
         }
       }
     }
-    vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 10ms
+    vTaskDelay(1000 / portTICK_PERIOD_MS);  // Delay 1000ms
   }
 }
 void TaskManualBarrierControl(void *pv) {
   while (1) {
     Serial.println("Task barie.....................");
     /* Điều khiển đóng mở barie bằng nút bấm */
-    if (digitalRead(btnRa_PIN) == 0) gate_in();
+    if (digitalRead(btnRa_PIN) == 0) {
+      display(3);
+      gate_in();
+    }
+
     if (digitalRead(btnVao_PIN) == 0) gate_out();
 
     if (Serial.available()) {
       char key = Serial.read();
 
-      if (key == '1') gate_in();
+      if (key == '1') {
+        display(3);
+        gate_in();
+      }
       if (key == '2') gate_out();
     }
 
-    vTaskDelay(15 / portTICK_PERIOD_MS);  // Delay 10ms
+    servo_in.write(172);
+    servo_out.write(82);
+
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 10ms
   }
 }
