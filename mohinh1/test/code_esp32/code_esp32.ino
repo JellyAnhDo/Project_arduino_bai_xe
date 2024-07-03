@@ -15,6 +15,8 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 TaskHandle_t xTaskSensor;
 TaskHandle_t xTaskManualBarrierControl;
 
+byte statusServo;
+
 /************** Define tasks and functions **************/
 void init_system();            // Pin mode for pins, connect internet and firebase
 void display(byte mode);       // Display on LCD with 3 modes: stand by, show parking space, warning
@@ -32,13 +34,13 @@ void setup() {
 
   // Create tasks for 2 cores
   xTaskCreatePinnedToCore(
-    TaskSensor,    // Hàm xử lý của Task
-    "TaskSensor",  // Tên Task
-    10000,         // Kích thước stack cho Task
-    NULL,          // Tham số truyền vào Task
-    1,             // Độ ưu tiên của Task (0 là thấp nhất, 3 là cao nhất)
-    &xTaskSensor,  // Biến lưu trữ Task handle
-    0              // Lõi CPU để chạy Task (0 hoặc 1)
+    TaskSensor,        // Hàm xử lý của Task
+    "TaskSensor",      // Tên Task
+    10000,             // Kích thước stack cho Task
+    NULL,              // Tham số truyền vào Task
+    tskIDLE_PRIORITY,  // Độ ưu tiên của Task (0 là thấp nhất, 3 là cao nhất)
+    &xTaskSensor,      // Biến lưu trữ Task handle
+    0                  // Lõi CPU để chạy Task (0 hoặc 1)
   );
 
   xTaskCreatePinnedToCore(
@@ -51,7 +53,9 @@ void setup() {
     1                            // Lõi CPU để chạy Task (0 hoặc 1)
   );
 }
-void loop() {}  // 2 Tasks run
+void loop() {
+  vTaskDelete(NULL);
+}  // 2 Tasks run
 
 void gate_in() {
   servo_in.attach(servoVao_PIN);
@@ -66,7 +70,10 @@ void gate_in() {
 
   vTaskDelay(5000 / portTICK_PERIOD_MS);
   servo_in.write(172);
-  Serial.println("aaaaa");
+
+  statusServo = 1;
+  vTaskDelay(200 / portTICK_PERIOD_MS);
+  servo_in.detach();
 }
 void gate_out() {
   servo_out.attach(servoRa_PIN);
@@ -81,6 +88,10 @@ void gate_out() {
 
   vTaskDelay(5000 / portTICK_PERIOD_MS);
   servo_out.write(82);
+
+  statusServo = 1;
+  vTaskDelay(200 / portTICK_PERIOD_MS);
+  servo_in.detach();
 }
 void init_system() {
   // Pin mode
@@ -114,6 +125,14 @@ void init_system() {
   Firebase.reconnectWiFi(true);
   Firebase.setReadTimeout(firebaseData, 1000 * 60);
   Firebase.setwriteSizeLimit(firebaseData, "tiny");
+
+  servo_in.attach(servoVao_PIN);
+  servo_out.attach(servoRa_PIN);
+  servo_in.write(172);
+  servo_out.write(82);
+  vTaskDelay(250 / portTICK_PERIOD_MS);
+  servo_in.detach();
+  servo_out.detach();
 }
 void display(byte mode) {
   lcd.clear();
@@ -152,7 +171,7 @@ void display(byte mode) {
       lcd.setCursor(0, 1);
       lcd.print("Canh Bao Co Chay");
       break;
-    case 5:  // Warning by sensor
+    case 5:
       lcd.setCursor(0, 0);
       lcd.print("     Sorry!     ");
       lcd.setCursor(0, 1);
@@ -167,11 +186,10 @@ byte push_data_to_firebase() {
   byte b = (digitalRead(slot2) == LOW) ? 1 : 0;
   byte c = (digitalRead(slot3) == LOW) ? 1 : 0;
   byte d = (digitalRead(slot4) == LOW) ? 1 : 0;
-  byte fireSensor = digitalRead(fireSensor_PIN);
 
   byte count = a + b + c + d;
 
-  Firebase.setInt(firebaseData, "/FireSensor", fireSensor);
+
   Firebase.setInt(firebaseData, "/ParkingSpace/Space1", a);
   Firebase.setInt(firebaseData, "/ParkingSpace/Space2", b);
   Firebase.setInt(firebaseData, "/ParkingSpace/Space3", c);
@@ -184,25 +202,32 @@ void TaskSensor(void *pv) {
   while (1) {
     Serial.println("Task sensor...................");
     // Check fire sensor
-    // if (digitalRead(fireSensor_PIN) == LOW) {
-    //   display(4);
-    //   servo_in.write(85);
-    //   servo_out.write(0);
-    //   digitalWrite(buzzer_PIN, LOW);
-    // } else {
-    //   // servo_in.write(172);
-    //   // servo_out.write(82);
-    //   digitalWrite(buzzer_PIN, HIGH);
-    //   if (push_data_to_firebase() == 4) {
-    //     display(5);
-    //   } else {
-    //     display(1);
-    //   }
-    // }
+    if (digitalRead(fireSensor_PIN) == LOW) {
+      display(4);
+      servo_in.attach(servoVao_PIN);
+      servo_out.attach(servoRa_PIN);
+      servo_in.write(85);
+      servo_out.write(0);
+      digitalWrite(buzzer_PIN, LOW);
+    } else {
+      if (statusServo == 0) {
+        servo_in.write(172);
+        servo_out.write(82);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+        servo_in.detach();
+        servo_out.detach();
+      }
 
-    push_data_to_firebase();
+      digitalWrite(buzzer_PIN, HIGH);
+      if (push_data_to_firebase() == 4) {
+        display(5);
+      } else {
+        display(1);
+      }
+    }
+    Firebase.setInt(firebaseData, "/FireSensor", digitalRead(fireSensor_PIN));
+
     // Điều khiển đèn
-    byte lightSensor = digitalRead(lightSensor_PIN);
     Firebase.getInt(firebaseData, "/Light/LightBtn");
     byte lightBtn = firebaseData.intData();
 
@@ -213,14 +238,14 @@ void TaskSensor(void *pv) {
       Firebase.getInt(firebaseData, "/Light/LightAuto");
       int lightBtnAuto = firebaseData.intData();
       if (lightBtnAuto == 1) {
-        if (lightSensor == HIGH) {
+        if (digitalRead(lightSensor_PIN) == HIGH) {
           digitalWrite(light_PIN, LOW);
         } else {
           digitalWrite(light_PIN, HIGH);
         }
       }
     }
-    vTaskDelay(1000 / portTICK_PERIOD_MS);  // Delay 1000ms
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 1000ms
   }
 }
 void TaskManualBarrierControl(void *pv) {
@@ -243,10 +268,11 @@ void TaskManualBarrierControl(void *pv) {
       }
       if (key == '2') gate_out();
     }
-
-    servo_in.write(172);
-    servo_out.write(82);
-
-    vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 10ms
+    statusServo = 0;
+    // servo_in.write(172);
+    // servo_out.write(82);
+    // vTaskDelay(250 / portTICK_PERIOD_MS);  // Delay 10ms
+    // display(1);
+    vTaskDelay(15 / portTICK_PERIOD_MS);  // Delay 10ms
   }
 }

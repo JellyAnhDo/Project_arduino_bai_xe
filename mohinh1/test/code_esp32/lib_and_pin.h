@@ -5,6 +5,8 @@
 #include <ESP32Servo.h>
 #include <FirebaseESP32.h>
 #include <LiquidCrystal_I2C.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 // Khai báo các chân
 #define slot1 34
