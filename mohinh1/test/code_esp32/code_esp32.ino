@@ -13,19 +13,22 @@ Servo servo_in, servo_out;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 TaskHandle_t xTaskSensor;
-TaskHandle_t xTaskManualBarrierControl;
+TaskHandle_t xTaskBarrierControl;
+
+SemaphoreHandle_t xBinarySemaphore;
+// QueueHandle_t queue;
 
 byte statusServo;
 
 /************** Define tasks and functions **************/
 void init_system();            // Pin mode for pins, connect internet and firebase
-void display(byte mode);       // Display on LCD with 3 modes: stand by, show parking space, warning
+void display(byte mode);       // Display on LCD with 4 modes: stand by, show parking space, warning
 void gate_in();                // Control gate in: false to close - true to open
 void gate_out();               // Control gate out: false to close - true to open
 byte push_data_to_firebase();  // Push data (avaiable parking spaces) and count available spaces
 
 void TaskSensor(void *pv);
-void TaskManualBarrierControl(void *pv);
+void TaskBarrierControl(void *pv);
 
 void setup() {
   Serial.begin(9600);
@@ -34,24 +37,22 @@ void setup() {
 
   // Create tasks for 2 cores
   xTaskCreatePinnedToCore(
-    TaskSensor,        // Hàm xử lý của Task
-    "TaskSensor",      // Tên Task
-    10000,             // Kích thước stack cho Task
-    NULL,              // Tham số truyền vào Task
-    tskIDLE_PRIORITY,  // Độ ưu tiên của Task (0 là thấp nhất, 3 là cao nhất)
-    &xTaskSensor,      // Biến lưu trữ Task handle
-    0                  // Lõi CPU để chạy Task (0 hoặc 1)
-  );
+    TaskSensor,
+    "TaskSensor",
+    10000,
+    NULL,
+    0,
+    &xTaskSensor,
+    0);
 
   xTaskCreatePinnedToCore(
-    TaskManualBarrierControl,    // Hàm xử lý của Task
-    "TaskManualBarrierControl",  // Tên Task
-    2048,                        // Kích thước stack cho Task
-    NULL,                        // Tham số truyền vào Task
-    1,                           // Độ ưu tiên của Task (0 là thấp nhất, 3 là cao nhất)
-    &xTaskManualBarrierControl,  // Biến lưu trữ Task handle
-    1                            // Lõi CPU để chạy Task (0 hoặc 1)
-  );
+    TaskBarrierControl,
+    "TaskBarrierControl",
+    2048,
+    NULL,
+    1,
+    &xTaskBarrierControl,
+    1);
 }
 void loop() {
   vTaskDelete(NULL);
@@ -69,7 +70,7 @@ void gate_in() {
   }
 
   vTaskDelay(5000 / portTICK_PERIOD_MS);
-  servo_in.write(172);
+  servo_in.write(171);
 
   statusServo = 1;
   vTaskDelay(200 / portTICK_PERIOD_MS);
@@ -126,9 +127,16 @@ void init_system() {
   Firebase.setReadTimeout(firebaseData, 1000 * 60);
   Firebase.setwriteSizeLimit(firebaseData, "tiny");
 
+  if (Firebase.beginStream(firebaseData, "/")) {
+    Serial.println("Connected to Firebase");
+  } else {
+    Serial.println("Failed to connect to Firebase");
+    Serial.println(firebaseData.errorReason());
+  }
+
   servo_in.attach(servoVao_PIN);
   servo_out.attach(servoRa_PIN);
-  servo_in.write(172);
+  servo_in.write(171);
   servo_out.write(82);
   vTaskDelay(250 / portTICK_PERIOD_MS);
   servo_in.detach();
@@ -210,13 +218,13 @@ void TaskSensor(void *pv) {
       servo_out.write(0);
       digitalWrite(buzzer_PIN, LOW);
     } else {
-      if (statusServo == 0) {
-        servo_in.write(172);
-        servo_out.write(82);
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-        servo_in.detach();
-        servo_out.detach();
-      }
+      // if (statusServo == 0) {
+      //   servo_in.write(171);
+      //   servo_out.write(82);
+      //   vTaskDelay(250 / portTICK_PERIOD_MS);
+      //   servo_in.detach();
+      //   servo_out.detach();
+      // }
 
       digitalWrite(buzzer_PIN, HIGH);
       if (push_data_to_firebase() == 4) {
@@ -248,7 +256,7 @@ void TaskSensor(void *pv) {
     vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 1000ms
   }
 }
-void TaskManualBarrierControl(void *pv) {
+void TaskBarrierControl(void *pv) {
   while (1) {
     Serial.println("Task barie.....................");
     /* Điều khiển đóng mở barie bằng nút bấm */
@@ -269,7 +277,7 @@ void TaskManualBarrierControl(void *pv) {
       if (key == '2') gate_out();
     }
     statusServo = 0;
-    // servo_in.write(172);
+    // servo_in.write(171);
     // servo_out.write(82);
     // vTaskDelay(250 / portTICK_PERIOD_MS);  // Delay 10ms
     // display(1);
