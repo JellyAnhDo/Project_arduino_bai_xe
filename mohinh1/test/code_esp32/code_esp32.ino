@@ -15,10 +15,8 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 TaskHandle_t xTaskSensor;
 TaskHandle_t xTaskBarrierControl;
 
-SemaphoreHandle_t xSemaphoreDisplay, xSemaphoreServo;
+SemaphoreHandle_t xMutexDisplay, xMutexServo;
 QueueHandle_t xQueue;
-
-byte statusServo;
 
 //=========================== Define tasks and functions =====================
 void init_system();            // Pin mode for pins, connect internet and firebase
@@ -37,6 +35,15 @@ void setup() {
   init_system();
   display(1);  // Stand by mode
 
+  xMutexDisplay = xSemaphoreCreateMutex();
+  if (xMutexDisplay == NULL) {
+    Serial.println("Failed to create Display Mutex");
+  }
+
+  xMutexServo = xSemaphoreCreateMutex();
+  if (xMutexServo == NULL) {
+    Serial.println("Failed to create Servo Mutex");
+  }
 
 
   // Create tasks for 2 cores
@@ -61,13 +68,16 @@ void TaskSensor(void *pvParameters) {
       servo_out.write(0);
       digitalWrite(buzzer_PIN, LOW);
     } else {
-      // if (statusServo == 0) {
-      //   servo_in.write(171);
-      //   servo_out.write(82);
-      //   vTaskDelay(250 / portTICK_PERIOD_MS);
-      //   servo_in.detach();
-      //   servo_out.detach();
-      // }
+      if (xSemaphoreTake(xMutexServo, portMAX_DELAY) == pdTRUE) {
+        servo_in.attach(servoVao_PIN);
+        servo_out.attach(servoRa_PIN);
+        servo_in.write(171);
+        servo_out.write(82);
+        vTaskDelay(300 / portTICK_PERIOD_MS);
+        servo_in.detach();
+        servo_out.detach();
+        xSemaphoreGive(xMutexServo);
+      }
 
       // digitalWrite(buzzer_PIN, HIGH);
       if (push_data_to_firebase() == 4) {
@@ -125,11 +135,6 @@ void TaskBarrierControl(void *pvParameters) {
       }
       if (key == '2') gate_out();
     }
-    statusServo = 0;
-    // servo_in.write(171);
-    // servo_out.write(82);
-    // vTaskDelay(250 / portTICK_PERIOD_MS);  // Delay 10ms
-    // display(1);
     vTaskDelay(15 / portTICK_PERIOD_MS);  // Delay 10ms
   }
 }
@@ -143,7 +148,11 @@ void TaskDisplayLCD(void *pvParameters) {
   while (1) {
     Serial.println("Task display....................");
     if (xQueueReceive(xQueue, &modeDisplay, (TickType_t)0)) {
-      display(modeDisplay);
+      if (xSemaphoreTake(xMutexDisplay, (TickType_t)10) == pdTRUE) {
+        display(modeDisplay);
+        Serial.println("Done show LCD.~!!!!!!");
+        xSemaphoreGive(xMutexDisplay);
+      }
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
@@ -199,41 +208,42 @@ void init_system() {
 }
 
 void gate_in() {
-  servo_in.attach(servoVao_PIN);
-  servo_in.write(85);
+  if (xSemaphoreTake(xMutexServo, portMAX_DELAY) == pdTRUE) {
+    servo_in.attach(servoVao_PIN);
+    servo_in.write(85);
 
-  for (int i = 0; i < 2; i++) {
-    digitalWrite(buzzer_PIN, LOW);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    digitalWrite(buzzer_PIN, HIGH);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    for (int i = 0; i < 2; i++) {
+      digitalWrite(buzzer_PIN, LOW);
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+      digitalWrite(buzzer_PIN, HIGH);
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    servo_in.write(171);
+    vTaskDelay(300 / portTICK_PERIOD_MS);
+    servo_in.detach();
+    xSemaphoreGive(xMutexServo);
   }
-
-  vTaskDelay(5000 / portTICK_PERIOD_MS);
-  servo_in.write(171);
-
-  statusServo = 1;
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  servo_in.detach();
 }
 
 void gate_out() {
-  servo_out.attach(servoRa_PIN);
-  servo_out.write(0);
+  if (xSemaphoreTake(xMutexServo, portMAX_DELAY) == pdTRUE) {
+    servo_out.attach(servoRa_PIN);
+    servo_out.write(0);
 
-  for (int i = 0; i < 2; i++) {
-    digitalWrite(buzzer_PIN, LOW);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    digitalWrite(buzzer_PIN, HIGH);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    for (int i = 0; i < 2; i++) {
+      digitalWrite(buzzer_PIN, LOW);
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+      digitalWrite(buzzer_PIN, HIGH);
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    servo_out.write(82);
+    vTaskDelay(250 / portTICK_PERIOD_MS);
+    servo_in.detach();
+    xSemaphoreGive(xMutexServo);
   }
-
-  vTaskDelay(5000 / portTICK_PERIOD_MS);
-  servo_out.write(82);
-
-  statusServo = 1;
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  servo_in.detach();
 }
 
 void display(byte mode) {
@@ -266,6 +276,7 @@ void display(byte mode) {
 
       lcd.setCursor(15, 1);
       (digitalRead(slot4) == LOW) ? lcd.print("X") : lcd.print("V");
+      vTaskDelay(5000 / portTICK_PERIOD_MS);
       break;
     case 4:  // Warning by sensor
       lcd.setCursor(0, 0);
