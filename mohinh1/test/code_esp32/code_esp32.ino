@@ -1,13 +1,13 @@
-// Custom library
+//============= Custom library ========================================
 #include "lib_and_pin.h"
 
-// Internet & database config
+//============= Internet & database config ============================
 #define WIFI_SSID "HoangAnhHN"
 #define WIFI_PASSWORD "Hoanganh2002"
 #define FIREBASE_AUTH "vjLt9l2OmXNWUaXyieAUfC4hV49gR6iRAH16s4Nl"
 #define FIREBASE_HOST "carparking-4ce1e-default-rtdb.firebaseio.com"
 
-// Create object
+//============== Create object ========================================
 FirebaseData firebaseData;
 Servo servo_in, servo_out;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -15,85 +15,140 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 TaskHandle_t xTaskSensor;
 TaskHandle_t xTaskBarrierControl;
 
-SemaphoreHandle_t xBinarySemaphore;
-// QueueHandle_t queue;
+SemaphoreHandle_t xSemaphoreDisplay, xSemaphoreServo;
+QueueHandle_t xQueue;
 
 byte statusServo;
 
-/************** Define tasks and functions **************/
+//=========================== Define tasks and functions =====================
 void init_system();            // Pin mode for pins, connect internet and firebase
 void display(byte mode);       // Display on LCD with 4 modes: stand by, show parking space, warning
 void gate_in();                // Control gate in: false to close - true to open
 void gate_out();               // Control gate out: false to close - true to open
 byte push_data_to_firebase();  // Push data (avaiable parking spaces) and count available spaces
 
-void TaskSensor(void *pv);
-void TaskBarrierControl(void *pv);
+//=========================== Tasks ========================================
+void TaskSensor(void *pvParameters);
+void TaskBarrierControl(void *pvParameters);
+void TaskDisplayLCD(void *pvParameters);
 
 void setup() {
   Serial.begin(9600);
   init_system();
   display(1);  // Stand by mode
 
-  // Create tasks for 2 cores
-  xTaskCreatePinnedToCore(
-    TaskSensor,
-    "TaskSensor",
-    10000,
-    NULL,
-    0,
-    &xTaskSensor,
-    0);
 
-  xTaskCreatePinnedToCore(
-    TaskBarrierControl,
-    "TaskBarrierControl",
-    2048,
-    NULL,
-    1,
-    &xTaskBarrierControl,
-    1);
+
+  // Create tasks for 2 cores
+  xTaskCreatePinnedToCore(TaskSensor, "TaskSensor", 10000, NULL, 0, &xTaskSensor, 0);
+  xTaskCreatePinnedToCore(TaskBarrierControl, "TaskBarrierControl", 2048, NULL, 1, &xTaskBarrierControl, 0);
+  xTaskCreatePinnedToCore(TaskDisplayLCD, "TaskDisplayLCD", 2048, NULL, 1, NULL, 1);
 }
 void loop() {
   vTaskDelete(NULL);
-}  // 2 Tasks run
+}
 
-void gate_in() {
-  servo_in.attach(servoVao_PIN);
-  servo_in.write(85);
+void TaskSensor(void *pvParameters) {
+  byte modeDis;
+  while (1) {
+    Serial.println("Task sensor...................");
+    // Check fire sensor
+    if (digitalRead(fireSensor_PIN) == LOW) {
+      modeDis = 4;
+      servo_in.attach(servoVao_PIN);
+      servo_out.attach(servoRa_PIN);
+      servo_in.write(85);
+      servo_out.write(0);
+      digitalWrite(buzzer_PIN, LOW);
+    } else {
+      // if (statusServo == 0) {
+      //   servo_in.write(171);
+      //   servo_out.write(82);
+      //   vTaskDelay(250 / portTICK_PERIOD_MS);
+      //   servo_in.detach();
+      //   servo_out.detach();
+      // }
 
-  for (int i = 0; i < 2; i++) {
-    digitalWrite(buzzer_PIN, LOW);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    digitalWrite(buzzer_PIN, HIGH);
+      // digitalWrite(buzzer_PIN, HIGH);
+      if (push_data_to_firebase() == 4) {
+        modeDis = 5;
+      } else {
+        modeDis = 1;
+      }
+    }
+    xQueueSend(xQueue, &modeDis, (TickType_t)0);
+    Firebase.setInt(firebaseData, "/FireSensor", digitalRead(fireSensor_PIN));
+
+    // Điều khiển đèn
+    Firebase.getInt(firebaseData, "/Light/LightBtn");
+    byte lightBtn = firebaseData.intData();
+
+    if (lightBtn == 1) {
+      digitalWrite(light_PIN, LOW);
+    } else {
+      digitalWrite(light_PIN, HIGH);
+      Firebase.getInt(firebaseData, "/Light/LightAuto");
+      int lightBtnAuto = firebaseData.intData();
+      if (lightBtnAuto == 1) {
+        if (digitalRead(lightSensor_PIN) == HIGH) {
+          digitalWrite(light_PIN, LOW);
+        } else {
+          digitalWrite(light_PIN, HIGH);
+        }
+      }
+    }
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 1000ms
+  }
+}
+
+void TaskBarrierControl(void *pvParameters) {
+  byte modeDisBarie;
+  while (1) {
+    Serial.println("Task barie.....................");
+    /* Điều khiển đóng mở barie bằng nút bấm */
+    if (digitalRead(btnRa_PIN) == 0) {
+      modeDisBarie = 3;
+      xQueueSend(xQueue, &modeDisBarie, (TickType_t)0);
+      gate_in();
+    }
+
+    if (digitalRead(btnVao_PIN) == 0) gate_out();
+
+    if (Serial.available()) {
+      char key = Serial.read();
+
+      if (key == '1') {
+        modeDisBarie = 3;
+        xQueueSend(xQueue, &modeDisBarie, (TickType_t)0);
+        // display(3);
+        gate_in();
+      }
+      if (key == '2') gate_out();
+    }
+    statusServo = 0;
+    // servo_in.write(171);
+    // servo_out.write(82);
+    // vTaskDelay(250 / portTICK_PERIOD_MS);  // Delay 10ms
+    // display(1);
+    vTaskDelay(15 / portTICK_PERIOD_MS);  // Delay 10ms
+  }
+}
+
+void TaskDisplayLCD(void *pvParameters) {
+  if (xQueue == NULL) {
+    xQueue = xQueueCreate(1, sizeof(byte));
+  }
+  byte modeDisplay;
+
+  while (1) {
+    Serial.println("Task display....................");
+    if (xQueueReceive(xQueue, &modeDisplay, (TickType_t)0)) {
+      display(modeDisplay);
+    }
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
-
-  vTaskDelay(5000 / portTICK_PERIOD_MS);
-  servo_in.write(171);
-
-  statusServo = 1;
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  servo_in.detach();
 }
-void gate_out() {
-  servo_out.attach(servoRa_PIN);
-  servo_out.write(0);
 
-  for (int i = 0; i < 2; i++) {
-    digitalWrite(buzzer_PIN, LOW);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    digitalWrite(buzzer_PIN, HIGH);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
-
-  vTaskDelay(5000 / portTICK_PERIOD_MS);
-  servo_out.write(82);
-
-  statusServo = 1;
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  servo_in.detach();
-}
 void init_system() {
   // Pin mode
   pinMode(slot1, INPUT);
@@ -142,6 +197,45 @@ void init_system() {
   servo_in.detach();
   servo_out.detach();
 }
+
+void gate_in() {
+  servo_in.attach(servoVao_PIN);
+  servo_in.write(85);
+
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(buzzer_PIN, LOW);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    digitalWrite(buzzer_PIN, HIGH);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+
+  vTaskDelay(5000 / portTICK_PERIOD_MS);
+  servo_in.write(171);
+
+  statusServo = 1;
+  vTaskDelay(200 / portTICK_PERIOD_MS);
+  servo_in.detach();
+}
+
+void gate_out() {
+  servo_out.attach(servoRa_PIN);
+  servo_out.write(0);
+
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(buzzer_PIN, LOW);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    digitalWrite(buzzer_PIN, HIGH);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+
+  vTaskDelay(5000 / portTICK_PERIOD_MS);
+  servo_out.write(82);
+
+  statusServo = 1;
+  vTaskDelay(200 / portTICK_PERIOD_MS);
+  servo_in.detach();
+}
+
 void display(byte mode) {
   lcd.clear();
   switch (mode) {
@@ -206,81 +300,35 @@ byte push_data_to_firebase() {
   return count;
 }
 
-void TaskSensor(void *pv) {
-  while (1) {
-    Serial.println("Task sensor...................");
-    // Check fire sensor
-    if (digitalRead(fireSensor_PIN) == LOW) {
-      display(4);
-      servo_in.attach(servoVao_PIN);
-      servo_out.attach(servoRa_PIN);
-      servo_in.write(85);
-      servo_out.write(0);
-      digitalWrite(buzzer_PIN, LOW);
-    } else {
-      // if (statusServo == 0) {
-      //   servo_in.write(171);
-      //   servo_out.write(82);
-      //   vTaskDelay(250 / portTICK_PERIOD_MS);
-      //   servo_in.detach();
-      //   servo_out.detach();
-      // }
+// // Function to generate buzzer sound
+// void generateTone(unsigned int frequency, unsigned long duration) {
+//   unsigned long period = 1000000 / frequency;  // Calculate the period of one cycle in microseconds
+//   unsigned long startTime = micros();          // Get the current time
 
-      digitalWrite(buzzer_PIN, HIGH);
-      if (push_data_to_firebase() == 4) {
-        display(5);
-      } else {
-        display(1);
-      }
-    }
-    Firebase.setInt(firebaseData, "/FireSensor", digitalRead(fireSensor_PIN));
+//   while (micros() - startTime < duration * 1000) {  // Convert duration to microseconds
+//     digitalWrite(buzzer_PIN, HIGH);                        // Turn on the buzzer
+//     delayMicroseconds(period / 2);                  // Wait for half of the period
+//     digitalWrite(buzzer_PIN, LOW);                         // Turn off the buzzer
+//     delayMicroseconds(period / 2);                  // Wait for the other half of the period
+//   }
+// }
 
-    // Điều khiển đèn
-    Firebase.getInt(firebaseData, "/Light/LightBtn");
-    byte lightBtn = firebaseData.intData();
+// // Function to generate access granted buzzer sound
+// void barrierOpenSound() {
+//   int frequency = 1400;
+//   int duration = 100;
+//   generateTone(frequency, duration);  // Frequency, duration
+//   vTaskDelay(50 / portTICK_PERIOD_MS);     // Pause between tones
+//   generateTone(frequency, duration);
+//   vTaskDelay(50 / portTICK_PERIOD_MS);
+// }
 
-    if (lightBtn == 1) {
-      digitalWrite(light_PIN, LOW);
-    } else {
-      digitalWrite(light_PIN, HIGH);
-      Firebase.getInt(firebaseData, "/Light/LightAuto");
-      int lightBtnAuto = firebaseData.intData();
-      if (lightBtnAuto == 1) {
-        if (digitalRead(lightSensor_PIN) == HIGH) {
-          digitalWrite(light_PIN, LOW);
-        } else {
-          digitalWrite(light_PIN, HIGH);
-        }
-      }
-    }
-    vTaskDelay(10 / portTICK_PERIOD_MS);  // Delay 1000ms
-  }
-}
-void TaskBarrierControl(void *pv) {
-  while (1) {
-    Serial.println("Task barie.....................");
-    /* Điều khiển đóng mở barie bằng nút bấm */
-    if (digitalRead(btnRa_PIN) == 0) {
-      display(3);
-      gate_in();
-    }
-
-    if (digitalRead(btnVao_PIN) == 0) gate_out();
-
-    if (Serial.available()) {
-      char key = Serial.read();
-
-      if (key == '1') {
-        display(3);
-        gate_in();
-      }
-      if (key == '2') gate_out();
-    }
-    statusServo = 0;
-    // servo_in.write(171);
-    // servo_out.write(82);
-    // vTaskDelay(250 / portTICK_PERIOD_MS);  // Delay 10ms
-    // display(1);
-    vTaskDelay(15 / portTICK_PERIOD_MS);  // Delay 10ms
-  }
-}
+// // Function to generate access denied buzzer sound
+// void accessDeniedSound() {
+//   int frequency = 400;
+//   int duration = 100;
+//   generateTone(frequency, duration);  // Frequency, duration
+//   vTaskDelay(50 / portTICK_PERIOD_MS);     // Pause between tones
+//   generateTone(frequency, duration);
+//   vTaskDelay(50 / portTICK_PERIOD_MS);
+// }
