@@ -63,20 +63,20 @@ void TaskSensor(void *pvParameters) {
     // Check fire sensor
     if (digitalRead(fireSensor_PIN) == LOW) {
       modeDisplay = 4;
-      servo_in.attach(servoVao_PIN);
-      servo_out.attach(servoRa_PIN);
+      // servo_in.attach(servoVao_PIN);
+      // servo_out.attach(servoRa_PIN);
       servo_in.write(85);
       servo_out.write(0);
       digitalWrite(buzzer_PIN, LOW);
     } else {
       if (xSemaphoreTake(xMutexServo, portMAX_DELAY) == pdTRUE) {
-        servo_in.attach(servoVao_PIN);
-        servo_out.attach(servoRa_PIN);
+        // servo_in.attach(servoVao_PIN);
+        // servo_out.attach(servoRa_PIN);
         servo_in.write(171);
         servo_out.write(82);
-        vTaskDelay(300 / portTICK_PERIOD_MS);
-        servo_in.detach();
-        servo_out.detach();
+        // vTaskDelay(300 / portTICK_PERIOD_MS);
+        // servo_in.detach();
+        // servo_out.detach();
         xSemaphoreGive(xMutexServo);
       }
 
@@ -150,7 +150,7 @@ void TaskDisplayLCD(void *pvParameters) {
       Serial.println("Done show LCD.~!!!!!!");
       xSemaphoreGive(xMutexDisplay);
     }
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(1200 / portTICK_PERIOD_MS);
   }
 }
 
@@ -198,14 +198,14 @@ void init_system() {
   servo_out.attach(servoRa_PIN);
   servo_in.write(171);
   servo_out.write(82);
-  vTaskDelay(250 / portTICK_PERIOD_MS);
-  servo_in.detach();
-  servo_out.detach();
+  // vTaskDelay(250 / portTICK_PERIOD_MS);
+  // servo_in.detach();
+  // servo_out.detach();
 }
 
 void gate_in() {
   if (xSemaphoreTake(xMutexServo, portMAX_DELAY) == pdTRUE) {
-    servo_in.attach(servoVao_PIN);
+    // servo_in.attach(servoVao_PIN);
     servo_in.write(85);
 
     for (int i = 0; i < 2; i++) {
@@ -216,15 +216,15 @@ void gate_in() {
     }
     vTaskDelay(5000 / portTICK_PERIOD_MS);
     servo_in.write(171);
-    vTaskDelay(300 / portTICK_PERIOD_MS);
-    servo_in.detach();
+    // vTaskDelay(300 / portTICK_PERIOD_MS);
+    // servo_in.detach();
     xSemaphoreGive(xMutexServo);
   }
 }
 
 void gate_out() {
   if (xSemaphoreTake(xMutexServo, portMAX_DELAY) == pdTRUE) {
-    servo_out.attach(servoRa_PIN);
+    // servo_out.attach(servoRa_PIN);
     servo_out.write(0);
 
     for (int i = 0; i < 2; i++) {
@@ -236,8 +236,8 @@ void gate_out() {
 
     vTaskDelay(5000 / portTICK_PERIOD_MS);
     servo_out.write(82);
-    vTaskDelay(250 / portTICK_PERIOD_MS);
-    servo_in.detach();
+    // vTaskDelay(250 / portTICK_PERIOD_MS);
+    // servo_in.detach();
     xSemaphoreGive(xMutexServo);
   }
 }
@@ -272,7 +272,7 @@ void display(byte mode) {
 
       lcd.setCursor(15, 1);
       (digitalRead(slot4) == LOW) ? lcd.print("X") : lcd.print("V");
-      vTaskDelay(5000 / portTICK_PERIOD_MS);
+      vTaskDelay(4000 / portTICK_PERIOD_MS);
       break;
     case 4:  // Warning by sensor
       lcd.setCursor(0, 0);
