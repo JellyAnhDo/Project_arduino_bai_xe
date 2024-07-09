@@ -18,6 +18,8 @@ TaskHandle_t xTaskBarrierControl;
 SemaphoreHandle_t xMutexDisplay, xMutexServo;
 QueueHandle_t xQueue;
 
+byte modeDisplay;
+
 //=========================== Define tasks and functions =====================
 void init_system();            // Pin mode for pins, connect internet and firebase
 void display(byte mode);       // Display on LCD with 4 modes: stand by, show parking space, warning
@@ -56,12 +58,11 @@ void loop() {
 }
 
 void TaskSensor(void *pvParameters) {
-  byte modeDis;
   while (1) {
     Serial.println("Task sensor...................");
     // Check fire sensor
     if (digitalRead(fireSensor_PIN) == LOW) {
-      modeDis = 4;
+      modeDisplay = 4;
       servo_in.attach(servoVao_PIN);
       servo_out.attach(servoRa_PIN);
       servo_in.write(85);
@@ -81,12 +82,12 @@ void TaskSensor(void *pvParameters) {
 
       // digitalWrite(buzzer_PIN, HIGH);
       if (push_data_to_firebase() == 4) {
-        modeDis = 5;
+        modeDisplay = 5;
       } else {
-        modeDis = 1;
+        modeDisplay = 1;
       }
     }
-    xQueueSend(xQueue, &modeDis, (TickType_t)0);
+    // xQueueSend(xQueue, &modeDisplay, (TickType_t)0);
     Firebase.setInt(firebaseData, "/FireSensor", digitalRead(fireSensor_PIN));
 
     // Điều khiển đèn
@@ -112,13 +113,12 @@ void TaskSensor(void *pvParameters) {
 }
 
 void TaskBarrierControl(void *pvParameters) {
-  byte modeDisBarie;
   while (1) {
     Serial.println("Task barie.....................");
     /* Điều khiển đóng mở barie bằng nút bấm */
     if (digitalRead(btnRa_PIN) == 0) {
-      modeDisBarie = 3;
-      xQueueSend(xQueue, &modeDisBarie, (TickType_t)0);
+      modeDisplay = 3;
+      // xQueueSend(xQueue, &modeDisplay, (TickType_t)0);
       gate_in();
     }
 
@@ -128,9 +128,8 @@ void TaskBarrierControl(void *pvParameters) {
       char key = Serial.read();
 
       if (key == '1') {
-        modeDisBarie = 3;
-        xQueueSend(xQueue, &modeDisBarie, (TickType_t)0);
-        // display(3);
+        modeDisplay = 3;
+        // xQueueSend(xQueue, &modeDisplay, (TickType_t)0);
         gate_in();
       }
       if (key == '2') gate_out();
@@ -140,19 +139,16 @@ void TaskBarrierControl(void *pvParameters) {
 }
 
 void TaskDisplayLCD(void *pvParameters) {
-  if (xQueue == NULL) {
-    xQueue = xQueueCreate(1, sizeof(byte));
-  }
-  byte modeDisplay;
+  // if (xQueue == NULL) {
+  //   xQueue = xQueueCreate(1, sizeof(byte));
+  // }
 
   while (1) {
     Serial.println("Task display....................");
-    if (xQueueReceive(xQueue, &modeDisplay, (TickType_t)0)) {
-      if (xSemaphoreTake(xMutexDisplay, (TickType_t)10) == pdTRUE) {
-        display(modeDisplay);
-        Serial.println("Done show LCD.~!!!!!!");
-        xSemaphoreGive(xMutexDisplay);
-      }
+    if (xSemaphoreTake(xMutexDisplay, (TickType_t)10) == pdTRUE) {
+      display(modeDisplay);
+      Serial.println("Done show LCD.~!!!!!!");
+      xSemaphoreGive(xMutexDisplay);
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
