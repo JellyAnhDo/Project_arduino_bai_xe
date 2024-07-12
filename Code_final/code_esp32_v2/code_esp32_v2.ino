@@ -56,6 +56,10 @@ void loop() {
 }
 
 void TaskSensor(void *pvParameters) {
+  // TIMERG0.wdt_wprotect = TIMG_WDT_WKEY_VALUE;
+  // TIMERG0.wdt_feed = 1;
+  // TIMERG0.wdt_wprotect = 0;
+  // disableCore0WDT();
   while (1) {
     Serial.println("Task sensor...................");
     // Check fire sensor
